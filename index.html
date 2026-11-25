@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>Městem za volantem</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Barlow:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+/* VOICE: palubní deska – málo slov, jasné stavy.
+   IDEA: interiér auta: pedály s gumovým vroubkováním, řadicí páka P-R-N-D, analogový budík.
+   PICTURE: celá obrazovka je 3D město; ovládání v rozích jako hmatové prvky.
+   COLOUR and TYPE: grafit, značková modř #0055a4, jantar blinkrů #ffa21a; Barlow Condensed pro čísla.
+   LAYOUT: vlevo nahoře ulice + limit, nahoře uprostřed zrcátko, vpravo nahoře tlačítka, dole budík; na mobilu volant vlevo, pedály a páka vpravo. */
+:root{color-scheme:dark;--ink:#f3f5f7;--glass:rgba(17,20,24,.72);--line:rgba(255,255,255,.14);--blue:#0055a4;--amber:#ffa21a;--ok:#36d07a}
+*{box-sizing:border-box;min-width:0;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;height:100%;overflow:hidden;background:#15181c;color:var(--ink);font:16px/1.45 Barlow,system-ui,sans-serif;overscroll-behavior:none;touch-action:none;user-select:none;-webkit-user-select:none}
+#stage{position:fixed;inset:0}#stage canvas{display:block;width:100%;height:100%}
+.hud{position:fixed;z-index:5;pointer-events:none}
+.pad{padding:max(10px,env(safe-area-inset-top)) max(12px,env(safe-area-inset-right)) max(10px,env(safe-area-inset-bottom)) max(12px,env(safe-area-inset-left))}
+#topL{top:0;left:0;display:flex;gap:10px;align-items:center}
+#limit canvas{width:50px;height:50px;display:block;filter:drop-shadow(0 2px 4px rgba(0,0,0,.5))}
+#street{background:var(--blue);color:#fff;font:600 19px/1 'Barlow Condensed',sans-serif;padding:8px 12px;border-radius:6px;border:2px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,.35);max-width:40vw;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#topR{top:0;right:0;display:flex;gap:8px;pointer-events:auto}
+.btn{appearance:none;border:1px solid var(--line);background:var(--glass);color:var(--ink);font:600 16px 'Barlow Condensed',sans-serif;min-height:44px;min-width:44px;padding:0 14px;border-radius:10px;cursor:pointer;backdrop-filter:blur(6px)}
+.btn:focus-visible{outline:3px solid #7fc4ff;outline-offset:2px}
+.btn svg{width:22px;height:22px;vertical-align:middle}
+#mirrorFrame{position:fixed;z-index:4;top:max(10px,env(safe-area-inset-top));left:50%;transform:translateX(-50%);width:min(320px,34vw);height:min(96px,10.5vw);border-radius:22px;border:4px solid #1b1e22;box-shadow:0 6px 18px rgba(0,0,0,.45),inset 0 0 0 1px rgba(255,255,255,.15);pointer-events:none}
+#gauge{position:fixed;z-index:5;left:50%;bottom:max(6px,env(safe-area-inset-bottom));transform:translateX(-50%);width:200px;height:200px;pointer-events:none}
+#minimap{position:fixed;z-index:5;left:max(12px,env(safe-area-inset-left));bottom:max(12px,env(safe-area-inset-bottom));width:170px;height:170px;border-radius:50%;border:3px solid rgba(255,255,255,.85);box-shadow:0 4px 16px rgba(0,0,0,.45);pointer-events:none}
+#attr{position:fixed;z-index:5;right:6px;bottom:3px;font-size:11px;opacity:.75;pointer-events:auto;text-align:right;max-width:46vw}
+#attr a{color:#fff}#attr .short{display:none}body.touch #attr .long{display:none}body.touch #attr .short{display:inline}
+#toast{position:fixed;z-index:6;top:36%;left:50%;transform:translate(-50%,-8px);background:var(--glass);border:1px solid var(--line);padding:10px 18px;border-radius:10px;font:600 20px 'Barlow Condensed';opacity:0;transition:opacity .25s,transform .25s;pointer-events:none;white-space:nowrap}
+#toast.show{opacity:1;transform:translate(-50%,0)}
+#loadVeh{position:fixed;z-index:12;left:50%;top:50%;transform:translate(-50%,-50%);background:var(--glass);padding:10px 16px;border-radius:10px;font:600 18px 'Barlow Condensed'}
+/* ----- dotykové ovládání ----- */
+.touchUI{display:none}
+body.touch .touchUI{display:flex}
+body.touch #gauge{left:max(8px,env(safe-area-inset-left));top:calc(max(10px,env(safe-area-inset-top)) + 54px);bottom:auto;transform:none;width:124px;height:124px}
+body.touch #minimap{width:112px;height:112px;left:auto;right:max(12px,env(safe-area-inset-right));bottom:auto;top:calc(max(10px,env(safe-area-inset-top)) + 56px)}
+body.touch #attr{right:auto;left:max(12px,env(safe-area-inset-left));bottom:auto;top:calc(max(10px,env(safe-area-inset-top)) + 182px);text-align:left}
+body.touch #mirrorFrame{top:calc(max(10px,env(safe-area-inset-top)) + 54px);width:min(200px,38vw);height:min(62px,12vw)}
+.tz{position:fixed;z-index:5;bottom:max(14px,env(safe-area-inset-bottom));gap:12px;align-items:flex-end}
+#tzL{left:max(12px,env(safe-area-inset-left));flex-direction:column;align-items:stretch}
+#tzR{right:max(12px,env(safe-area-inset-right))}
+.row2{display:flex;gap:12px}
+.steer{width:86px;height:86px;border-radius:24px;border:1px solid rgba(255,255,255,.22);background:radial-gradient(120% 120% at 30% 20%,rgba(70,78,88,.78),rgba(18,21,25,.82));box-shadow:0 8px 18px rgba(0,0,0,.45),inset 0 1px 0 rgba(255,255,255,.18);display:grid;place-items:center;color:#fff;touch-action:none;transition:transform .06s}
+.steer svg{width:40px;height:40px;filter:drop-shadow(0 1px 1px rgba(0,0,0,.6))}
+.steer.on{transform:scale(.95);background:radial-gradient(120% 120% at 30% 20%,rgba(110,170,230,.75),rgba(25,60,95,.85))}
+.blink{flex:1;height:40px;border-radius:12px;border:1px solid rgba(255,162,26,.55);background:rgba(18,21,25,.7);display:grid;place-items:center;color:var(--amber);touch-action:manipulation}
+.blink svg{width:26px;height:26px}
+.blink.lit{background:var(--amber);color:#2a1700;box-shadow:0 0 18px rgba(255,162,26,.8)}
+.gear{display:flex;flex-direction:column;width:54px;border-radius:27px;background:linear-gradient(#24282e,#121418);border:1px solid rgba(255,255,255,.18);box-shadow:0 8px 18px rgba(0,0,0,.45),inset 0 1px 0 rgba(255,255,255,.12);padding:5px;gap:3px}
+.gear button{appearance:none;border:0;height:40px;border-radius:20px;background:transparent;color:rgba(255,255,255,.55);font:700 20px 'Barlow Condensed';touch-action:manipulation}
+.gear button.sel{background:radial-gradient(circle at 40% 35%,#5b6573,#2b3139);color:#fff;box-shadow:0 0 0 2px #7fd1ff,0 3px 8px rgba(0,0,0,.6)}
+.gear button[data-gear=R].sel{box-shadow:0 0 0 2px #ffd24a,0 3px 8px rgba(0,0,0,.6)}
+.pedal{position:relative;border-radius:14px;border:1px solid #0b0c0e;background:linear-gradient(160deg,#4a5059,#1c1f24 70%);box-shadow:0 8px 16px rgba(0,0,0,.5),inset 0 1px 0 rgba(255,255,255,.2);touch-action:none;transition:transform .06s,filter .06s;display:flex;align-items:flex-end;justify-content:center;padding-bottom:6px;font:700 13px 'Barlow Condensed';letter-spacing:.04em;color:rgba(255,255,255,.75)}
+.pedal::before{content:"";position:absolute;inset:10px 10px 26px;border-radius:8px;background:repeating-linear-gradient(0deg,#15171a 0 4px,#3a3f46 4px 9px);box-shadow:inset 0 2px 4px rgba(0,0,0,.6)}
+.pedal.on{transform:translateY(4px) scale(.97);filter:brightness(1.25)}
+.pedal.gas{width:72px;height:136px}
+.pedal.brake{width:98px;height:92px}
+.pedal.gas.on{box-shadow:0 0 20px rgba(54,208,122,.6)}
+.pedal.brake.on{box-shadow:0 0 20px rgba(255,80,60,.6)}
+@media (max-width:420px){.steer{width:74px;height:74px}.pedal.gas{width:62px;height:120px}.pedal.brake{width:80px;height:80px}.gear{width:48px}.gear button{height:34px}.tz{gap:8px}}
+/* ----- panely ----- */
+.overlay{position:fixed;inset:0;z-index:10;display:grid;place-items:center;background:rgba(10,12,15,.55);padding:16px}
+.overlay[hidden],[hidden]{display:none!important}
+.panel{background:#1b1f25;border:1px solid var(--line);border-radius:16px;padding:22px 22px 18px;width:min(520px,100%);max-height:calc(100dvh - 32px);overflow:auto;box-shadow:0 18px 60px rgba(0,0,0,.5)}
+.panel h1{font:700 40px/1.05 'Barlow Condensed',sans-serif;margin:0 0 4px;text-wrap:balance}
+.panel h2{font:600 26px/1.1 'Barlow Condensed',sans-serif;margin:0 0 14px}
+.panel h3{font:600 15px 'Barlow',sans-serif;margin:16px 0 8px;opacity:.85}
+.panel p{margin:0 0 12px;color:#c9d0d8}
+.seg{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
+.seg.four{grid-template-columns:repeat(4,minmax(0,1fr))}
+.seg.five{grid-template-columns:repeat(5,minmax(0,1fr))}
+.seg .btn[aria-pressed=true]{background:var(--blue);border-color:#fff}
+.vcard{display:flex;flex-direction:column;align-items:center;gap:2px;padding:8px 4px;min-height:78px}
+.vcard svg{width:46px;height:30px}
+p.note{font-size:13px;margin-top:6px;opacity:.8}
+.row{display:flex;align-items:center;gap:10px;min-height:44px}
+.row input{width:22px;height:22px;accent-color:var(--blue)}
+.go{background:var(--ok);color:#08210f;border:0;font-size:22px;width:100%;min-height:54px;margin-top:10px}
+.keys{display:grid;grid-template-columns:auto 1fr;gap:4px 12px;font-size:14px;color:#c9d0d8}
+.keys kbd{font:600 13px 'Barlow Condensed';background:#2a3038;border:1px solid var(--line);border-radius:5px;padding:1px 6px;white-space:nowrap}
+.brand{display:flex;gap:12px;align-items:center;margin-bottom:8px}
+.brand .sign{width:46px;height:46px;flex:none;border-radius:6px;background:var(--blue);border:3px solid #fff;display:grid;place-items:center;font:700 22px 'Barlow Condensed';color:#fff}
+#loading .panel{text-align:center}
+.spin{width:38px;height:38px;border:4px solid rgba(255,255,255,.2);border-top-color:#fff;border-radius:50%;margin:6px auto 12px;animation:sp 1s linear infinite}
+@keyframes sp{to{transform:rotate(360deg)}}
+#bigmap{position:fixed;inset:0;z-index:9;background:#20242a}
+#bigmapCanvas{position:absolute;inset:0;width:100%;height:100%;touch-action:none;cursor:grab}
+#bigmap .bar{position:absolute;top:max(10px,env(safe-area-inset-top));right:max(12px,env(safe-area-inset-right));display:flex;gap:8px}
+#bigmap .ttl{position:absolute;top:max(14px,env(safe-area-inset-top));left:max(14px,env(safe-area-inset-left));font:700 24px 'Barlow Condensed'}
+details{margin-top:12px}summary{cursor:pointer;color:#c9d0d8;min-height:32px}
+@media (prefers-reduced-motion:reduce){.spin{animation:none}#toast{transition:none}}
+@media (max-width:600px){#street{font-size:16px;max-width:36vw}.panel h1{font-size:32px}#limit canvas{width:42px;height:42px}.seg.five{grid-template-columns:repeat(3,minmax(0,1fr))}}
+#stats{position:fixed;z-index:5;top:calc(max(10px,env(safe-area-inset-top)) + 58px);left:max(12px,env(safe-area-inset-left));display:flex;flex-direction:column;gap:5px;pointer-events:none;font:600 16px/1 'Barlow Condensed',sans-serif}
+#stats .chip{display:flex;align-items:center;gap:7px;background:var(--glass);border:1px solid var(--line);border-radius:8px;padding:5px 9px;width:max-content}
+#stats .bar{width:64px;height:7px;border-radius:4px;background:rgba(255,255,255,.15);overflow:hidden}#stats .bar i{display:block;height:100%;background:var(--ok)}
+#stats .pts.warn{color:#ffb4a8}
+#ticket{position:fixed;z-index:7;top:16%;left:50%;transform:translate(-50%,-10px);min-width:260px;max-width:90vw;background:#f6f1e3;color:#1c1c1c;border-radius:6px;padding:12px 16px;box-shadow:0 10px 30px rgba(0,0,0,.5);opacity:0;transition:opacity .25s,transform .25s;pointer-events:none;border-top:8px solid #c8102e}
+#ticket.show{opacity:1;transform:translate(-50%,0)}#ticket .h{font:700 13px 'Barlow Condensed';letter-spacing:.08em;text-transform:uppercase;color:#6b6b6b}#ticket .w{font:700 21px/1.15 'Barlow Condensed';margin:3px 0 6px}#ticket .m{display:flex;gap:14px;font:700 26px 'Barlow Condensed'}#ticket .m span:last-child{color:#c8102e}
+#act{position:fixed;z-index:6;right:max(12px,env(safe-area-inset-right));top:calc(max(10px,env(safe-area-inset-top)) + 60px);display:flex;flex-direction:column;gap:8px;align-items:flex-end}
+#act .btn{background:#0b6b3a;border-color:#4fd18b}
+#gameover .big{font:700 44px/1 'Barlow Condensed';color:#ff6a5c;margin:4px 0 10px}
+.profile{display:grid;grid-template-columns:auto 1fr;gap:4px 14px;font-size:15px}.profile b{font-family:'Barlow Condensed';font-size:18px}
+#navBox{position:fixed;z-index:5;top:calc(max(10px,env(safe-area-inset-top)) + min(96px,10.5vw) + 14px);left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:10px;background:#0d4f8b;border:2px solid #fff;border-radius:10px;padding:6px 12px 6px 8px;box-shadow:0 4px 14px rgba(0,0,0,.4);pointer-events:none;max-width:92vw}
+#navBox svg{width:40px;height:40px;flex:none}#navBox .d{font:700 26px/1 'Barlow Condensed'}#navBox .s{font:500 15px/1.1 'Barlow Condensed';opacity:.9;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:46vw}
+#misBox{position:fixed;z-index:5;left:max(12px,env(safe-area-inset-left));top:calc(max(10px,env(safe-area-inset-top)) + 214px);max-width:min(300px,44vw);background:var(--glass);border:1px solid var(--line);border-left:4px solid #46c2ff;border-radius:8px;padding:7px 10px;pointer-events:none;font:500 15px/1.25 Barlow,sans-serif}
+#misBox b{display:block;font:700 17px 'Barlow Condensed'}#misBox .t{font:700 18px 'Barlow Condensed';color:#9fd8ff}
+#missions .mlist{display:grid;gap:8px}#missions .mbtn{display:flex;flex-direction:column;align-items:flex-start;text-align:left;padding:10px 14px;min-height:56px;width:100%}#missions .mbtn small{font:400 14px Barlow,sans-serif;opacity:.8}
+#lineSel{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:6px;margin-top:6px}
+@media (max-width:600px){#misBox{top:calc(max(10px,env(safe-area-inset-top)) + 200px);font-size:13px}#navBox .d{font-size:22px}#navBox svg{width:32px;height:32px}}
+body.touch #stats{top:auto;bottom:max(6px,env(safe-area-inset-bottom));left:50%;transform:translateX(-50%);flex-direction:row;gap:4px;font-size:13px}
+body.touch #stats .chip{padding:3px 6px}body.touch #stats .bar{width:34px}
+body.touch #misBox{top:auto;left:50%;transform:translateX(-50%);bottom:calc(max(6px,env(safe-area-inset-bottom)) + 30px);max-width:min(360px,46vw);padding:4px 8px;font-size:12px;text-align:center}
+body.touch #misBox b{display:inline;font-size:14px;margin-right:6px}body.touch #misBox .t{display:inline;font-size:14px;margin-left:6px}
+body.touch #act{top:calc(max(10px,env(safe-area-inset-top)) + 174px)}
+body.touch #toast{top:54%;font-size:17px}
+body.touch #navBox{top:calc(max(10px,env(safe-area-inset-top)) + 54px);padding:3px 10px 3px 6px}
+body.touch #ticket{top:30%}
+@media (max-height:420px){body.touch #stats #stClock{display:none}}
+#limit{cursor:pointer;pointer-events:auto}#limit.lim{box-shadow:0 0 0 3px #46c2ff,0 0 14px #46c2ff}
+#limBtn[aria-pressed=true]{background:#0d4f8b;border-color:#46c2ff;color:#fff}
+@media (orientation:portrait){body.touch #stats{top:calc(max(10px,env(safe-area-inset-top)) + 176px);bottom:auto;left:auto;right:max(12px,env(safe-area-inset-right));transform:none;flex-direction:column;align-items:flex-end}
+ body.touch #misBox{bottom:auto;top:calc(max(10px,env(safe-area-inset-top)) + 300px);max-width:70vw}
+ body.touch #act{top:calc(max(10px,env(safe-area-inset-top)) + 300px)}
+ body.touch #street{max-width:34vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+ body.touch .row2 .blink{min-width:48px}}
+</style>
+</head>
+<body>
+<div id="stage"></div>
+
+<div id="topL" class="hud pad"><div id="limit"></div><div id="street">…</div></div>
+<div id="topR" class="hud pad">
+  <button class="btn" id="btnMis" aria-label="Mise" title="Mise (J)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 21V4M5 4h11l-2 4 2 4H5"/></svg></button>
+  <button class="btn" id="btnMap" aria-label="Mapa města" title="Mapa (M)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6l6-2 6 2 6-2v14l-6 2-6-2-6 2z"/><path d="M9 4v14M15 6v14"/></svg></button>
+  <button class="btn" id="btnCam" aria-label="Přepnout kameru" title="Kamera (C)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg></button>
+  <button class="btn" id="btnSettings" aria-label="Nastavení" title="Nastavení (Esc)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1L7 17M17 7l2.1-2.1"/></svg></button>
+</div>
+<div id="stats"><div class="chip" id="stClock">🕒 12:00</div><div class="chip" id="stMoney">10 000 Kč</div><div class="chip pts" id="stPts">0 / 12 bodů</div><div class="chip" id="stFuel">⛽<span class="bar"><i></i></span></div><div class="chip" id="stDmg" hidden>🔧 0 %</div></div>
+<div id="act"></div>
+<div id="navBox" hidden><svg viewBox="0 0 24 24" id="navIco"></svg><div><div class="d" id="navD"></div><div class="s" id="navS"></div></div></div>
+<div id="misBox" hidden><b id="misT"></b><span id="misD"></span><div class="t" id="misX"></div></div>
+<div id="ticket" role="alert"><div class="h" id="tkH">Pokuta</div><div class="w" id="tkW"></div><div class="m"><span id="tkF"></span><span id="tkP"></span></div></div>
+<div id="mirrorFrame" hidden></div>
+<canvas id="gauge" width="400" height="400"></canvas>
+<canvas id="minimap" width="240" height="240"></canvas>
+<div id="toast" role="status"></div>
+<div id="loadVeh" hidden>Načítám vozidlo…</div>
+<div id="attr"><span class="long">© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">přispěvatelé OpenStreetMap</a> · Ortofoto, DMR 5G, RÚIAN © <a href="https://geoportal.cuzk.gov.cz" target="_blank" rel="noopener">ČÚZK</a> (CC BY 4.0) · </span><span class="short">© OSM, ČÚZK · </span><a href="#" id="lnkCredits">zdroje</a></div>
+
+<div id="tzL" class="touchUI tz">
+  <div class="row2"><button class="blink" id="blinkL" aria-label="Levý blinkr"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M3 12l8-7v4h10v6H11v4z"/></svg></button><button class="blink" id="limBtn" aria-label="Omezovač rychlosti" style="font:700 14px 'Barlow Condensed';white-space:nowrap">LIM</button><button class="blink" id="hornBtn" aria-label="Klakson"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 10v4h4l6 4V6l-6 4z"/><path d="M17 9a4 4 0 0 1 0 6"/></svg></button><button class="blink" id="blinkR" aria-label="Pravý blinkr"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M21 12l-8-7v4H3v6h10v4z"/></svg></button></div>
+  <div class="row2">
+    <div class="steer" data-touch="left" aria-label="Doleva"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M15 4l-8 8 8 8"/></svg></div>
+    <div class="steer" data-touch="right" aria-label="Doprava"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M9 4l8 8-8 8"/></svg></div>
+  </div>
+</div>
+<div id="tzR" class="touchUI tz">
+  <div class="gear" role="group" aria-label="Řadicí páka"><button data-gear="P">P</button><button data-gear="R">R</button><button data-gear="N">N</button><button data-gear="D">D</button></div>
+  <div class="pedal brake" data-touch="brake" aria-label="Brzda">BRZDA</div>
+  <div class="pedal gas" data-touch="gas" aria-label="Plyn">PLYN</div>
+</div>
+
+<div id="bigmap" hidden>
+  <canvas id="bigmapCanvas"></canvas>
+  <div class="ttl">Mapa</div>
+  <div class="bar"><button class="btn" id="mapIn" aria-label="Přiblížit">+</button><button class="btn" id="mapOut" aria-label="Oddálit">−</button><button class="btn" id="mapCenter">Na vozidlo</button><button class="btn" id="closeMap">Zavřít</button></div>
+</div>
+
+<div id="loading" class="overlay"><div class="panel"><div class="spin"></div><p id="loadStatus">Načítám…</p></div></div>
+
+<div id="start" class="overlay" hidden><div class="panel">
+  <div class="brand"><div class="sign">HK</div><div><h1>Městem za volantem</h1></div></div>
+  <p>Hradec Králové, vnitřní okruh I/31 a 200 m kolem. Skutečný terén, střechy z leteckých snímků, budovy podle katastru.</p>
+  <h3>Vozidlo</h3>
+  <div class="seg four">
+    <button class="btn vcard" data-veh="car"><svg viewBox="0 0 46 30" fill="currentColor"><path d="M6 18l5-8h20l7 8h3a2 2 0 0 1 2 2v4H3v-4a2 2 0 0 1 3-2z"/><circle cx="13" cy="25" r="3.5" fill="#1b1f25" stroke="currentColor" stroke-width="2"/><circle cx="34" cy="25" r="3.5" fill="#1b1f25" stroke="currentColor" stroke-width="2"/></svg>Osobák</button>
+    <button class="btn vcard" data-veh="truck"><svg viewBox="0 0 46 30" fill="currentColor"><rect x="1" y="6" width="28" height="16" rx="1"/><path d="M31 10h8l5 7v5H31z"/><circle cx="9" cy="25" r="3.5" fill="#1b1f25" stroke="currentColor" stroke-width="2"/><circle cx="37" cy="25" r="3.5" fill="#1b1f25" stroke="currentColor" stroke-width="2"/></svg>Kamion</button>
+    <button class="btn vcard" data-veh="bus"><svg viewBox="0 0 46 30" fill="currentColor"><rect x="2" y="5" width="42" height="18" rx="3"/><circle cx="11" cy="25" r="3.5" fill="#1b1f25" stroke="currentColor" stroke-width="2"/><circle cx="35" cy="25" r="3.5" fill="#1b1f25" stroke="currentColor" stroke-width="2"/></svg>Autobus</button>
+    <button class="btn vcard" data-veh="trolley"><svg viewBox="0 0 46 30" fill="currentColor"><rect x="2" y="9" width="42" height="15" rx="3"/><path d="M16 9L26 1M20 9l10-8" stroke="currentColor" stroke-width="2"/><circle cx="11" cy="26" r="3" fill="#1b1f25" stroke="currentColor" stroke-width="2"/><circle cx="35" cy="26" r="3" fill="#1b1f25" stroke="currentColor" stroke-width="2"/></svg>Trolejbus</button>
+  </div>
+  <div class="seg five" id="carModels" style="margin-top:8px"></div>
+  <p class="note" id="vehNote"></p>
+  <details><summary>Ovládání na klávesnici</summary>
+  <div class="keys">
+    <kbd>W / ↑</kbd><span>plyn</span>
+    <kbd>S / ↓</kbd><span>brzda</span>
+    <kbd>A D / ← →</kbd><span>zatáčení</span>
+    <kbd>F · R · N · P</kbd><span>převod D (jízda) · zpátečka · neutrál · parkování</span>
+    <kbd>Q / E</kbd><span>levý / pravý blinkr, X výstražná světla</span>
+    <kbd>Mezerník</kbd><span>ruční brzda</span>
+    <kbd>H</kbd><span>klakson</span>
+    <kbd>L</kbd><span>omezovač rychlosti (vyp / 30 / 50 / 70 / 90)</span>
+    <kbd>J</kbd><span>mise</span>
+    <kbd>C · M · Esc</kbd><span>kamera · mapa · nastavení</span>
+  </div></details>
+  <button class="btn go" id="btnStart">Vyjet</button>
+</div></div>
+
+<div id="settings" class="overlay" hidden><div class="panel" role="dialog" aria-labelledby="setH">
+  <h2 id="setH">Nastavení</h2>
+  <h3>Grafika</h3>
+  <div class="seg"><button class="btn" data-q="low">Nízká</button><button class="btn" data-q="medium">Střední</button><button class="btn" data-q="high">Vysoká</button></div>
+  <p class="note">Nízká: kratší dohled a menší letecké snímky, pro slabší telefony. Vysoká: plné rozlišení, ostřejší snímky, dlouhý dohled a stíny.</p>
+  <h3>Vzhled města</h3>
+  <div class="seg" style="grid-template-columns:repeat(2,minmax(0,1fr))"><button class="btn" data-photo="0">Vlastní (z map)</button><button class="btn" data-photo="1">Skutečné 3D (Google)</button></div>
+  <p class="note" id="photoNote"></p>
+  <h3>Přísnost pravidel</h3>
+  <div class="seg"><button class="btn" data-strict="real">Skutečná</button><button class="btn" data-strict="mild">Mírná</button><button class="btn" data-strict="off">Bez pokut</button></div>
+  <p class="note">Mírná: první přestupek každého druhu je jen domluva a nejvýš jedna pokuta za 15 s. Skutečná: pokuty a body jako v ČR.</p>
+  <h3>Denní doba</h3>
+  <div class="seg five"><button class="btn" data-time="cycle">Plynule</button><button class="btn" data-time="morning">Ráno</button><button class="btn" data-time="noon">Poledne</button><button class="btn" data-time="evening">Večer</button><button class="btn" data-time="night">Noc</button></div>
+  <p class="note">Plynule: jeden herní den trvá 24 minut.</p>
+  <h3>Počasí</h3>
+  <div class="seg five"><button class="btn" data-weather="clear">Jasno</button><button class="btn" data-weather="rain">Déšť</button><button class="btn" data-weather="fog">Mlha</button><button class="btn" data-weather="snow">Sníh</button><button class="btn" data-weather="storm">Bouřka</button></div>
+  <p class="note">Na mokru a sněhu se prodlužuje brzdná dráha.</p>
+  <h3>Zvuk</h3>
+  <label class="row"><input type="checkbox" id="optSound"> Zvuky a hlášení zastávek</label>
+  <label class="row">Hlasitost <input type="range" id="optVol" min="0" max="1" step="0.05" style="flex:1"></label>
+  <h3>Ovládání na obrazovce</h3>
+  <div class="seg"><button class="btn" data-t="auto">Automaticky</button><button class="btn" data-t="on">Zapnuto</button><button class="btn" data-t="off">Vypnuto</button></div>
+  <h3>Zobrazení</h3>
+  <label class="row"><input type="checkbox" id="optMinimap"> Minimapa</label>
+  <label class="row"><input type="checkbox" id="optMirror"> Zpětné zrcátko (na nízké grafice vypnuté)</label>
+  <h3>Řidič</h3>
+  <div class="profile" id="profile"></div>
+  <button class="btn" id="btnRepair" style="width:100%;margin-top:10px">Opravit vozidlo</button>
+  <button class="btn" id="btnVehicle" style="width:100%;margin-top:8px">Změnit vozidlo</button>
+  <button class="btn" id="btnReset" style="width:100%;margin-top:8px">Vrátit na start</button>
+  <button class="btn" id="btnNewGame" style="width:100%;margin-top:8px">Nová hra (smazat peníze, body a postup)</button>
+  <button class="btn go" id="closeSettings">Pokračovat</button>
+</div></div>
+<div id="missions" class="overlay" hidden><div class="panel" role="dialog" aria-labelledby="misH">
+  <h2 id="misH">Mise</h2>
+  <div class="mlist" id="misList"></div>
+  <div id="lineWrap" hidden><h3>Vyberte linku</h3><div id="lineSel"></div></div>
+  <button class="btn" id="misCancel" style="width:100%;margin-top:10px" hidden>Zrušit probíhající misi</button>
+  <button class="btn go" id="misClose">Zavřít</button>
+</div></div>
+<div id="gameover" class="overlay" hidden><div class="panel" role="dialog">
+  <h2>Řidičský průkaz odebrán</h2>
+  <div class="big">12 bodů</div>
+  <p>Dosáhl(a) jste 12 trestných bodů. Ve skutečnosti teď přicházíte o řidičák na rok.</p>
+  <div class="profile" id="goStats"></div>
+  <button class="btn go" id="btnGoAgain">Začít znovu</button>
+</div></div>
+
+<div id="credits" class="overlay" hidden><div class="panel">
+  <h2>Zdroje</h2>
+  <p>Mapa: © přispěvatelé OpenStreetMap (ODbL). Letecké snímky (Ortofoto ČR), výškopis DMR 5G a údaje o budovách z RÚIAN: © ČÚZK, CC BY 4.0. Data byla upravena pro hru.</p>
+  <p>Modely vozidel ze Sketchfabu, licence CC BY 4.0 (upraveno: zjednodušení, převod textur):<br>
+  „Generic passenger car pack“ – comrade1280 · „Generic civil service vehicles pack“ – comrade1280 · „MAN TGX 2010 V8 – High-Detail Semi-Truck“ – DevPoly3D · „Truck Trailer“ – cmitche1 · „Solaris Urbino 12 - Bus Simulator: Original“ – vj32621 · „2025 Solaris Trollino 12“ – tonielpro520.</p>
+  <button class="btn go" id="closeCredits">Zavřít</button>
+</div></div>
+
+<script src="game.js"></script>
+<script>{const c=document.getElementById('credits');document.getElementById('lnkCredits').addEventListener('click',e=>{e.preventDefault();c.hidden=false});document.getElementById('closeCredits').addEventListener('click',()=>{c.hidden=true})}</script>
+</body>
+</html>
